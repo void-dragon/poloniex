@@ -5,10 +5,7 @@ authors = ["Arne Simon <arne_simon@gmx.de>"]
 
 [dependencies]
 chrono = { version = "*", features = ["serde"] }
-futures = "0.1"
-hyper = "0.11"
-hyper-tls = "*"
-tokio-core = "0.1"
+curl = "*"
 rust-crypto = "*"
 serde = "1"
 serde_derive = "1"

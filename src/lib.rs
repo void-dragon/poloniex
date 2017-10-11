@@ -1,8 +1,20 @@
+//!
+//! # Poloniex API
+//!
+//! API implementation for the [Poloniex](https://poloniex.com/) market-place.
+//!
+//! **Please Donate**
+//!
+//! + **BTC:** 17voJDvueb7iZtcLRrLtq3dfQYBaSi2GsU
+//! + **ETC:** 0x7bC5Ff6Bc22B4C6Af135493E6a8a11A62D209ae5
+//! + **XMR:** 49S4VziJ9v2CSkH6mP9km5SGeo3uxhG41bVYDQdwXQZzRF6mG7B4Fqv2aNEYHmQmPfJcYEnwNK1cAGLHMMmKaUWg25rHnkm
+//!
+//! **Poloniex API Documentation:**
+//!
+//! + https://poloniex.com/support/
+//!
 extern crate crypto;
-extern crate futures;
-extern crate hyper;
-extern crate hyper_tls;
-extern crate tokio_core;
+extern crate curl;
 #[macro_use]
 extern crate serde_derive;
 extern crate serde_json;
@@ -12,9 +24,8 @@ use crypto::mac::Mac;
 use crypto::sha2::Sha512;
 use std::collections::HashMap;
 use std::fmt::Write;
-use futures::{Future, Stream};
-use hyper::Client;
-use tokio_core::reactor::Core;
+use std::io::Read;
+use curl::easy::{Easy, List};
 
 
 ///
@@ -26,7 +37,7 @@ pub struct Account {
     pub secret: String,
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Clone, Debug)]
 pub struct TickPair {
     pub id: u32,
     pub last: String,
@@ -48,100 +59,102 @@ pub struct TickPair {
 
 pub type Tick = HashMap<String, TickPair>;
 
-pub struct Poloniex {
-    core: Core,
-    client: Client<::hyper_tls::HttpsConnector<::hyper::client::HttpConnector>>,
+
+fn public(url: &str) -> Result<Vec<u8>, String> {
+    let mut easy = Easy::new();
+    let mut dst = Vec::new();
+
+    easy.url(&format!("https://poloniex.com/public{}", url))
+        .unwrap();
+
+    let result = {
+        let mut transfer = easy.transfer();
+        transfer
+            .write_function(|data| {
+                dst.extend_from_slice(data);
+                Ok(data.len())
+            })
+            .unwrap();
+
+        transfer.perform()
+    };
+
+    result.map_err(|e| format!("{:?}", e)).and_then(
+        |_x| Ok(dst),
+    )
 }
 
-impl Poloniex {
-    pub fn new() -> Poloniex {
-        let core = Core::new().unwrap();
-        let client = Client::configure()
-            .connector(::hyper_tls::HttpsConnector::new(4, &core.handle()).unwrap())
-            .build(&core.handle());
+pub fn ticker() -> Result<Tick, String> {
+    public("?command=returnTicker").and_then(|data| {
+        serde_json::from_slice(&data).map_err(|e| format!("{:?}", e))
+    })
+}
 
-        Poloniex {
-            client: client,
-            core: core,
-        }
+fn private(account: &Account, params: &mut HashMap<String, String>) -> Result<Vec<u8>, String> {
+    let timestamp = ::std::time::UNIX_EPOCH.elapsed().unwrap();
+    let nonce = format!("{}{}", timestamp.as_secs(), timestamp.subsec_nanos());
+    let mut dst = Vec::new();
+    let mut easy = Easy::new();
+
+    easy.url("https://poloniex.com/tradingApi").unwrap();
+    easy.post(true).unwrap();
+
+    params.insert("nonce".to_owned(), nonce);
+
+    let mut body = params.iter().fold(
+        String::new(),
+        |data, item| data + item.0 + "=" + item.1 + "&",
+    );
+    body.pop();
+
+    let mut body_bytes = body.as_bytes();
+    let mut hmac = Hmac::new(Sha512::new(), account.secret.as_bytes());
+
+    hmac.input(body_bytes);
+
+    let mut list = List::new();
+    let sign = hmac.result();
+
+    let mut hex = String::new();
+    for byte in sign.code() {
+        write!(&mut hex, "{:02x}", byte).expect("could not create hmac hex");
     }
+    list.append("Content-Type: application/x-www-form-urlencoded")
+        .unwrap();
+    list.append(&format!("Key: {}", account.key)).unwrap();
+    list.append(&format!("Sign: {}", hex)).unwrap();
 
-    fn public(&mut self, url: &str) -> Result<::hyper::Chunk, ::hyper::Error> {
-        let work = self.client
-            .get(
-                format!("https://poloniex.com/public{}", url)
-                    .parse()
-                    .unwrap(),
-            )
-            .and_then(|res| res.body().concat2());
+    easy.http_headers(list).unwrap();
+    easy.post_field_size(body_bytes.len() as u64).unwrap();
 
-        self.core.run(work)
-    }
+    let result = {
+        let mut transfer = easy.transfer();
 
-    pub fn ticker(&mut self) -> Result<Tick, String> {
-        self.public("?command=returnTicker")
-            .map_err(|e| format!("{:?}", e))
-            .and_then(|data| {
-                serde_json::from_slice(&data).map_err(|e| format!("{:?}", e))
+        transfer
+            .read_function(|buf| Ok(body_bytes.read(buf).unwrap_or(0)))
+            .unwrap();
+
+        transfer
+            .write_function(|data| {
+                dst.extend_from_slice(data);
+                Ok(data.len())
             })
-    }
+            .unwrap();
 
-    fn private(
-        &mut self,
-        account: &Account,
-        params: &mut HashMap<String, String>,
-    ) -> Result<hyper::Chunk, hyper::Error> {
-        let url = "https://poloniex.com/tradingApi";
-        let timestamp = ::std::time::UNIX_EPOCH.elapsed().unwrap();
-        let nonce = format!("{}{}", timestamp.as_secs(), timestamp.subsec_nanos());
+        transfer.perform()
+    };
 
-        params.insert("nonce".to_owned(), nonce);
+    result.map_err(|e| format!("{:?}", e)).and_then(
+        |_x| Ok(dst),
+    )
+}
 
-        let mut body = params.iter().fold(
-            String::new(),
-            |data, item| data + item.0 + "=" + item.1 + "&",
-        );
-        body.pop();
+pub fn return_balances(account: &Account) -> Result<HashMap<String, String>, String> {
+    let mut params = HashMap::new();
 
-        let mut hmac = Hmac::new(Sha512::new(), account.secret.as_bytes());
+    params.insert("command".to_owned(), "returnBalances".to_owned());
 
-        hmac.input(body.as_bytes());
-
-
-        let mut req = ::hyper::Request::new(::hyper::Method::Post, url.parse().unwrap());
-
-        {
-            let headers = req.headers_mut();
-            let sign = hmac.result();
-
-            let mut hex = String::new();
-            for byte in sign.code() {
-                write!(&mut hex, "{:02x}", byte).expect("could not create hmac hex");
-            }
-
-            headers.set_raw("Content-type", "application/x-www-form-urlencoded");
-            headers.set_raw("Key", account.key.clone());
-            headers.set_raw("Sign", hex);
-        }
-
-        req.set_body(body);
-
-        let work = self.client.request(req).and_then(
-            |res| res.body().concat2(),
-        );
-
-        self.core.run(work)
-    }
-
-    pub fn return_balances(&mut self, account: &Account) -> Result<HashMap<String, String>, String> {
-        let mut params = HashMap::new();
-
-        params.insert("command".to_owned(), "returnBalances".to_owned());
-
-        self.private(account, &mut params)
-            .map_err(|e| format!("{:?}", e))
-            .and_then(|data| {
-                serde_json::from_slice(&data).map_err(|e| format!("{:?}", e))
-            })
-    }
+    private(account, &mut params).and_then(|data| {
+        serde_json::from_slice(&data).map_err(|e| format!("{:?}", e))
+    })
 }
