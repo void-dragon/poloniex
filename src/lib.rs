@@ -70,7 +70,7 @@ pub struct OpenOrder {
     pub total: String,
 }
 
-pub type OpenOrders = HashMap<String, OpenOrder>;
+pub type OpenOrders = HashMap<String, Vec<OpenOrder>>;
 
 #[derive(Deserialize, Serialize, Clone, Debug)]
 pub struct OrderTrade {
