@@ -198,6 +198,8 @@ pub fn return_open_orders(account: &Account, pair: Option<String>) -> Result<Ope
 
     if let Some(p) = pair {
         params.insert("currencyPair".to_owned(), p);
+    } else {
+        params.insert("currencyPair".to_owned(), "all".to_owned());
     }
 
     private(account, &mut params).and_then(|data| {
