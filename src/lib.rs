@@ -59,6 +59,38 @@ pub struct TickPair {
 
 pub type Tick = HashMap<String, TickPair>;
 
+#[derive(Deserialize, Serialize, Clone, Debug)]
+pub struct OpenOrder {
+    #[serde(rename = "orderNumber")]
+    pub order_number: String,
+    #[serde(rename = "type")]
+    pub kind: String,
+    pub rate: String,
+    pub amount: String,
+    pub total: String,
+}
+
+pub type OpenOrders = HashMap<String, OpenOrder>;
+
+#[derive(Deserialize, Serialize, Clone, Debug)]
+pub struct OrderTrade {
+    amount: String,
+    date: String,
+    rate: String,
+    total: String,
+    #[serde(rename = "tradeID")]
+    trade_id: String,
+    #[serde(rename = "type")]
+    kind: String,
+}
+
+#[derive(Deserialize, Serialize, Clone, Debug)]
+pub struct Order {
+    #[serde(rename = "orderNumber")]
+    pub order_number: i64,
+    #[serde(rename = "resultingTrades")]
+    pub resulting_trades: Vec<OrderTrade>,
+}
 
 fn public(url: &str) -> Result<Vec<u8>, String> {
     let mut easy = Easy::new();
@@ -153,6 +185,46 @@ pub fn return_balances(account: &Account) -> Result<HashMap<String, String>, Str
     let mut params = HashMap::new();
 
     params.insert("command".to_owned(), "returnBalances".to_owned());
+
+    private(account, &mut params).and_then(|data| {
+        serde_json::from_slice(&data).map_err(|e| format!("{:?}", e))
+    })
+}
+
+pub fn return_open_orders(account: &Account, pair: Option<String>) -> Result<OpenOrders, String> {
+    let mut params = HashMap::new();
+
+    params.insert("command".to_owned(), "returnOpenOrders".to_owned());
+
+    if let Some(p) = pair {
+        params.insert("currencyPair".to_owned(), p);
+    }
+
+    private(account, &mut params).and_then(|data| {
+        serde_json::from_slice(&data).map_err(|e| format!("{:?}", e))
+    })
+}
+
+pub fn buy(account: &Account, pair: &str, rate: &str, amount: &str) -> Result<Order, String> {
+    let mut params = HashMap::new();
+
+    params.insert("command".to_owned(), "buy".to_owned());
+    params.insert("currencyPair".to_owned(), String::from(pair));
+    params.insert("rate".to_owned(), String::from(rate));
+    params.insert("amount".to_owned(), String::from(amount));
+
+    private(account, &mut params).and_then(|data| {
+        serde_json::from_slice(&data).map_err(|e| format!("{:?}", e))
+    })
+}
+
+pub fn sell(account: &Account, pair: &str, rate: &str, amount: &str) -> Result<Order, String> {
+    let mut params = HashMap::new();
+
+    params.insert("command".to_owned(), "sell".to_owned());
+    params.insert("currencyPair".to_owned(), String::from(pair));
+    params.insert("rate".to_owned(), String::from(rate));
+    params.insert("amount".to_owned(), String::from(amount));
 
     private(account, &mut params).and_then(|data| {
         serde_json::from_slice(&data).map_err(|e| format!("{:?}", e))
