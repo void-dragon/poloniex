@@ -2,9 +2,13 @@
 name = "poloniex"
 version = "0.1.0"
 authors = ["Arne Simon <arne_simon@gmx.de>"]
+description = "REST API for the poloniex market place."
+license = "MIT"
+documentation = "https://docs.rs/poloniex"
+homepage = "https://github.com/void-dragon/poloniex"
+repository = "https://github.com/void-dragon/poloniex"
 
 [dependencies]
-chrono = { version = "*", features = ["serde"] }
 curl = "*"
 rust-crypto = "*"
 serde = "1"
