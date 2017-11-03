@@ -124,7 +124,7 @@ pub fn ticker() -> Result<Tick, String> {
 
 fn private(account: &Account, params: &mut HashMap<String, String>) -> Result<Vec<u8>, String> {
     let timestamp = ::std::time::UNIX_EPOCH.elapsed().unwrap();
-    let nonce = format!("{}{}", timestamp.as_secs(), timestamp.subsec_nanos());
+    let nonce = format!("{}{:09}", timestamp.as_secs(), timestamp.subsec_nanos());
     let mut dst = Vec::new();
     let mut easy = Easy::new();
 
