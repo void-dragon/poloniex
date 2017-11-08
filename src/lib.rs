@@ -183,10 +183,10 @@ fn private(
         let val: serde_json::Value = serde_json::from_slice(&dst).unwrap();
 
         if let Some(e) = val.get("error") {
-            Err(String::from(e.as_str().unwrap()))
-        } else {
-            Ok(val)
+            return Err(String::from(e.as_str().unwrap()));
         }
+
+        Ok(val)
     })
 }
 
