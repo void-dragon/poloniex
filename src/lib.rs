@@ -87,7 +87,7 @@ pub struct OrderTrade {
 #[derive(Deserialize, Serialize, Clone, Debug)]
 pub struct Order {
     #[serde(rename = "orderNumber")]
-    pub order_number: i64,
+    pub order_number: String,
     #[serde(rename = "resultingTrades")]
     pub resulting_trades: Vec<OrderTrade>,
 }
@@ -122,7 +122,10 @@ pub fn ticker() -> Result<Tick, String> {
     })
 }
 
-fn private(account: &Account, params: &mut HashMap<String, String>) -> Result<Vec<u8>, String> {
+fn private(
+    account: &Account,
+    params: &mut HashMap<String, String>,
+) -> Result<serde_json::Value, String> {
     let timestamp = ::std::time::UNIX_EPOCH.elapsed().unwrap();
     let nonce = format!("{}{:09}", timestamp.as_secs(), timestamp.subsec_nanos());
     let mut dst = Vec::new();
@@ -176,9 +179,15 @@ fn private(account: &Account, params: &mut HashMap<String, String>) -> Result<Ve
         transfer.perform()
     };
 
-    result.map_err(|e| format!("{:?}", e)).and_then(
-        |_x| Ok(dst),
-    )
+    result.map_err(|e| format!("{:?}", e)).and_then(|_x| {
+        let val: serde_json::Value = serde_json::from_slice(&dst).unwrap();
+
+        if let Some(e) = val.get("error") {
+            Err(String::from(e.as_str().unwrap()))
+        } else {
+            Ok(val)
+        }
+    })
 }
 
 pub fn return_balances(account: &Account) -> Result<HashMap<String, String>, String> {
@@ -187,7 +196,7 @@ pub fn return_balances(account: &Account) -> Result<HashMap<String, String>, Str
     params.insert("command".to_owned(), "returnBalances".to_owned());
 
     private(account, &mut params).and_then(|data| {
-        serde_json::from_slice(&data).map_err(|e| format!("{:?}", e))
+        serde_json::from_value(data).map_err(|e| format!("{:?}", e))
     })
 }
 
@@ -203,7 +212,7 @@ pub fn return_open_orders(account: &Account, pair: Option<String>) -> Result<Ope
     }
 
     private(account, &mut params).and_then(|data| {
-        serde_json::from_slice(&data).map_err(|e| format!("{:?}", e))
+        serde_json::from_value(data).map_err(|e| format!("{:?}", e))
     })
 }
 
@@ -216,7 +225,7 @@ pub fn buy(account: &Account, pair: &str, rate: &str, amount: &str) -> Result<Or
     params.insert("amount".to_owned(), String::from(amount));
 
     private(account, &mut params).and_then(|data| {
-        serde_json::from_slice(&data).map_err(|e| format!("{:?}", e))
+        serde_json::from_value(data).map_err(|e| format!("{:?}", e))
     })
 }
 
@@ -229,6 +238,6 @@ pub fn sell(account: &Account, pair: &str, rate: &str, amount: &str) -> Result<O
     params.insert("amount".to_owned(), String::from(amount));
 
     private(account, &mut params).and_then(|data| {
-        serde_json::from_slice(&data).map_err(|e| format!("{:?}", e))
+        serde_json::from_value(data).map_err(|e| format!("{:?}", e))
     })
 }
